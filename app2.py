@@ -1,19 +1,22 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import streamlit as st
 import joblib
 import base64
+from sklearn.preprocessing import LabelEncoder
 
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="Loan Approval Predictor",
+    layout="centered",
+    page_icon="🏦"
+)
 
 # --- Custom Styling ---
-def add_bg_from_local(image_file):
-    with open(image_file, "rb") as image:
-        encoded_image = base64.b64encode(image.read()).decode()
 st.markdown("""
     <style>
         .stApp {
-            background-image: url("https://raw.githubusercontent.com/disha290/machine-learning-project/refs/heads/main/loanpicture.jpg");
+            background-image: url("https://raw.githubusercontent.com/leonadsouza28/LOAN-APPROVAL-PREDICTION/refs/heads/main/LP_image.png");
             background-size: cover;
             background-repeat: no-repeat;
             background-attachment: fixed;
@@ -47,7 +50,8 @@ st.markdown("""
         }
         .subtitle {
             font-size: 18px;
-            color: #666666;
+            color: white;
+            font-weight: bold;
         }
         /* 🔵 Make input boxes blue */
         div[data-baseweb="select"] > div {
@@ -60,20 +64,30 @@ st.markdown("""
             border: 1px solid #0066cc !important;
             border-radius: 6px !important;
         }
+        /* ⚪ Make all selectbox/number input labels bold */
+        .stSelectbox label, .stNumberInput label {
+            color: black !important;
+            font-weight: bold;
+        }
+        /* 🌑 Darken prediction boxes */
+        div["data-testid="stSuccess"], div["data-testid="stError"] {
+            background-color: rgba(0, 0, 0, 0.8) !important;
+            color: white !important;
+            border: 1px solid white !important;
+            border-radius: 8px !important;
+            padding: 15px !important;
+            margin-top: 10px !important;
+        }
+        div["data-testid="stSuccess"] * , div["data-testid="stError"] * {
+            color: white !important;
+        }
     </style>
-""",
-    unsafe_allow_html=True)
-# Load model and scaler
+""", unsafe_allow_html=True)
+
+# --- Load Model & Preprocessing Files ---
 model = joblib.load("loan_approval_model.pkl")
 scaler = joblib.load("scaler.pkl")
-
-# Page configuration
-st.set_page_config(
-    page_title="Loan Approval Predictor",
-    layout="centered",
-    page_icon="🏦"
-)
-
+model_columns = joblib.load("model_columns.pkl")
 
 # --- Title & Subtitle ---
 st.markdown('<div class="main">', unsafe_allow_html=True)
@@ -85,7 +99,7 @@ with st.form(key="input_form"):
     col1, col2 = st.columns(2)
 
     with col1:
-        Gender = st.selectbox("Gender", ['', 'Male', 'Female'])
+        Gender = st.selectbox("Gender", ['', 'Male', 'Female', 'Other'])
         Married = st.selectbox("Married", ['', 'Yes', 'No'])
         Dependents = st.selectbox("Number of Dependents", ['', '0', '1', '2', '3+'])
         Education = st.selectbox("Education", ['', 'Graduate', 'Not Graduate'])
@@ -94,49 +108,78 @@ with st.form(key="input_form"):
     with col2:
         ApplicantIncome = st.number_input("Applicant Income", min_value=0)
         CoapplicantIncome = st.number_input("Coapplicant Income", min_value=0)
-        LoanAmount = st.selectbox("Loan Amount (in thousands)", [''] + list(range(1, 1001)))
-        Loan_Amount_Term = st.selectbox("Loan Term (in days)", [''] + list(range(1, 1001)))
+        LoanAmount = st.number_input("Loan Amount (in Rupees)", min_value=0, step=1000)
+        # Convert to thousands for the model
+        LoanAmount_thousands = LoanAmount / 1000
+
+        Loan_Amount_Term = st.selectbox("Loan Term (in years)", [''] + list(range(1, 1001)))
         Credit_History = st.selectbox("Credit History", ['', '1', '0'])
         Property_Area = st.selectbox("Property Area", ['', 'Urban', 'Semiurban', 'Rural'])
 
-    # ✅ Submit button stays inside form
+    # Submit button
     st.markdown('<div class="center-button">', unsafe_allow_html=True)
     predict = st.form_submit_button("Predict Loan Approval")
     st.markdown('</div>', unsafe_allow_html=True)
 
 # --- Prediction Logic ---
 if predict:
+    # Ensure no missing required fields
     required_fields = [Gender, Married, Dependents, Education, Self_Employed, LoanAmount, Loan_Amount_Term, Credit_History, Property_Area]
     if any(f == '' for f in required_fields):
         st.warning("⚠️ Please fill in all fields before predicting.")
     else:
-        # Convert input into DataFrame
-        input_data = pd.DataFrame({
-            'ApplicantIncome': [ApplicantIncome],
-            'CoapplicantIncome': [CoapplicantIncome],
-            'LoanAmount': [int(LoanAmount)],
-            'Loan_Amount_Term': [int(Loan_Amount_Term)],
-            'Credit_History': [int(Credit_History)],
-            'Gender_Male': [1 if Gender == 'Male' else 0],
-            'Married_Yes': [1 if Married == 'Yes' else 0],
-            'Dependents_1': [1 if Dependents == '1' else 0],
-            'Dependents_2': [1 if Dependents == '2' else 0],
-            'Dependents_3+': [1 if Dependents == '3+' else 0],
-            'Education_Not Graduate': [1 if Education == 'Not Graduate' else 0],
-            'Self_Employed_Yes': [1 if Self_Employed == 'Yes' else 0],
-            'Property_Area_Semiurban': [1 if Property_Area == 'Semiurban' else 0],
-            'Property_Area_Urban': [1 if Property_Area == 'Urban' else 0]
-        })
-
-        # Scale input
-        input_scaled = scaler.transform(input_data)
-
-        # Predict
-        prediction = model.predict(input_scaled)[0]
-        prediction_proba = model.predict_proba(input_scaled)[0][1]
-
-        # Output
-        if prediction == 1:
-            st.success(f"✅ Loan will be Approved (Confidence: {prediction_proba:.2%})")
+        # Custom Loan Amount Validation
+        if int(LoanAmount) < 1000:
+            st.warning("⚠️ Loan Amount must be at least 1,000.")
+        elif int(LoanAmount) <= (ApplicantIncome + CoapplicantIncome):
+            st.warning("⚠️ Loan Amount must be greater than the total income (Applicant + Coapplicant).")
         else:
-            st.error(f"❌ Loan will NOT be Approved (Confidence: {1 - prediction_proba:.2%})")
+            # Step 1: Create raw input DataFrame
+            input_dict = {
+                'Gender': [Gender],
+                'Married': [Married],
+                'Dependents': [Dependents],
+                'Education': [Education],
+                'Self_Employed': [Self_Employed],
+                'ApplicantIncome': [ApplicantIncome],
+                'CoapplicantIncome': [CoapplicantIncome],
+                'LoanAmount': [LoanAmount_thousands],
+                'Loan_Amount_Term': [int(Loan_Amount_Term)],
+                'Credit_History': [int(Credit_History)],
+                'Property_Area': [Property_Area]
+            }
+            input_df = pd.DataFrame(input_dict)
+
+            # Step 2: Encode categorical binary columns
+            le = LabelEncoder()
+            for col in ['Gender', 'Married', 'Education', 'Self_Employed']:
+                input_df[col] = le.fit_transform(input_df[col])
+
+            # Step 3: One-hot encode multi-class features
+            input_df = pd.get_dummies(input_df, columns=['Dependents', 'Property_Area'], drop_first=True)
+
+            # Step 4: Align with training columns
+            input_df = input_df.reindex(columns=model_columns, fill_value=0)
+
+            # Step 5: Scale input
+            input_scaled = scaler.transform(input_df)
+
+            # Get probability of prediction
+            prediction_proba = model.predict_proba(input_scaled)
+
+            # Probability of being approved (class = 1)
+            confidence = prediction_proba[0][1] * 100  
+
+            # Prevent showing exact 100.00%
+            if confidence == 100:
+                confidence = 99.99
+
+            # Get prediction (0 = Not Approved, 1 = Approved)
+            prediction = model.predict(input_scaled)[0]    
+
+            # Show prediction
+            if prediction == 1:
+                st.success(f"✅ Loan will be Approved (Confidence: {confidence:.4f}%)")
+            else:
+                st.error(f"❌ Loan will NOT be Approved (Confidence: {100 - confidence:.4f}%)")
+
