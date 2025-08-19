@@ -16,7 +16,7 @@ st.set_page_config(
 st.markdown("""
     <style>
         .stApp {
-            background-image: url("https://raw.githubusercontent.com/leonadsouza28/LOAN-APPROVAL-PREDICTION/refs/heads/main/LP_image.png");
+            background-image: url("https://raw.githubusercontent.com/disha290/new_machine_learning/refs/heads/main/loanpicture.jpg");
             background-size: cover;
             background-repeat: no-repeat;
             background-attachment: fixed;
